@@ -1,0 +1,107 @@
+---
+- hosts: solr
+  tasks:
+    - name: Ensure core directories exist
+      file:
+        path: "/opt/solr/server/solr/{{ item.name }}"
+        state: directory
+        owner: "solr"
+        group: "solr"
+        mode: "u=wrx,g=rwx,o="
+        recurse: true
+      loop: "{{ flightdeck_solr.cores | default([]) }}"
+    - name: Ensure non-custom core conf directories exist
+      file:
+        path: "/opt/solr/server/solr/{{ item.name }}/conf"
+        state: directory
+        owner: "solr"
+        group: "solr"
+        mode: "u=wrx,g=rwx,o="
+        recurse: true
+      when:
+        - item.type | default(true) != 'custom'
+      loop: "{{ flightdeck_solr.cores | default([]) }}"
+    - name: Ensure core data directories exist
+      file:
+        path: "{{ item.dataDir | default('/data/' + item.name) }}"
+        state: directory
+        owner: "solr"
+        group: "solr"
+        mode: "u=wrx,g=rwx,o="
+        recurse: true
+      loop: "{{ flightdeck_solr.cores | default([]) }}"
+    - name: Symlink non-custom core data directores to /opt/solr/server/solr/
+      file:
+        src: "{{ item.dataDir | default('/data/' + item.name) }}"
+        dest: "/opt/solr/server/solr/{{ item.name }}/data"
+        state: link
+        owner: "solr"
+        group: "solr"
+        mode: "u=wrx,g=rwx,o="
+      loop: "{{ flightdeck_solr.cores | default([]) }}"
+      when:
+        - item.type | default(true) != 'custom'
+    - name: Sync custom core confs to /opt/solr/server/solr
+      synchronize:
+        src: "{{ item.confDir }}/"
+        dest: "/opt/solr/server/solr/{{ item.name }}/conf"
+        archive: yes
+        delete: yes
+        owner: no
+        group: no
+        perms: no
+      when:
+        - item.type | default(false) == 'custom'
+        - item.confDir is defined
+      loop: "{{ flightdeck_solr.cores | default([]) }}"
+    - name: Symlink custom core dataDir to /opt/solr/server/solr
+      file:
+        src: "{{ item.dataDir }}"
+        dest: "/opt/solr/server/solr/{{ item.name }}/data"
+        state: link
+        owner: "solr"
+        group: "solr"
+        mode: "u=wrx,g=rwx,o="
+      when:
+        - item.type | default(false) == 'custom'
+        - item.dataDir is defined
+      loop: "{{ flightdeck_solr.cores | default([]) }}"
+    - name: Start local solr
+      shell: >
+         /opt/solr/bin/solr start
+      environment:
+        SOLR_HEAP: "512m"
+        SOLR_HOME: "/opt/solr/server/solr"
+        SOLR_LOGS_DIR: "/opt/solr/server/logs"
+        SOLR_PID_DIR: "/opt/solr/server/logs"
+        SOLR_PORT: "{{ flightdeck_solr.port | default('8983') }}"
+        SOLR_OPTS: "-Xss256k -Djetty.host=localhost"
+      notify:
+        - stop local solr
+    - name: Wait for solr to be ready
+      uri:
+        url: "http://localhost:{{ flightdeck_solr.port | default('8983') }}"
+        return_content: yes
+      register: _solr_ready
+      until: "'solr' in _solr_ready.content | default('')"
+      retries: 12
+      delay: 5
+    - name: Get list of existing cores
+      uri:
+        url: "http://localhost:{{ flightdeck_solr.port | default('8983') }}/solr/admin/cores"
+        return_content: yes
+      register: _current_cores
+    - name: Generate a flat list of core names
+      set_fact:
+        _wanted_cores: "{{ flightdeck_solr.cores | default([]) | map(attribute='name') | list }}"
+    - name: Create cores
+      command: >
+        /opt/solr/bin/solr create -c {{ item }}
+      when: item not in _current_cores.content
+      loop: "{{ _wanted_cores }}"
+  handlers:
+    - name: stop local solr
+      shell: >
+        /opt/solr/bin/solr stop -all
+      environment:
+        SOLR_PID_DIR: "/opt/solr/server/logs"

@@ -1,0 +1,48 @@
+---
+flighdeck_motd_name: Varnish 6.1
+
+flightdeck_groups:
+  - name: "varnish"
+
+flightdeck_users:
+  - name: "varnish"
+    group: "varnish"
+    home: "/var/lib/varnish"
+
+flightdeck_root_prompt: '\u@flight-deck-varnish:\w# '
+flightdeck_user_prompt: '\u@flight-deck-varnish:\w$ '
+
+flightdeck_run_commands: |
+  if [ -f "/config/varnish/flight-deck-varnish.yml" ]; then
+    ansible-playbook -i /ansible/inventories/all.ini -e "@/config/varnish/flight-deck-varnish.yml" /ansible/run.yml
+  else
+    ansible-playbook -i /ansible/inventories/all.ini /ansible/run.yml
+  fi
+
+flightdeck_varnish:
+
+flightdeck_varnish_defaults:
+  backends:
+   - name: "default"
+     host: "localhost"
+     port: "80"
+  skipCache:
+    - "^/status\\.php$"
+    - "^/update\\.php"
+    - "^/install\\.php"
+    - "^/wp-login\\.php$"
+    - "^/apc\\.php$"
+    - "^/admin"
+    - "^/admin/.*$"
+    - "^/user"
+    - "^/user/.*$"
+    - "^/users/.*$"
+    - "^/info/.*$"
+    - "^/flag/.*$"
+    - "^/wp-admin/.*$"
+    - "^.*/ahah/.*$"
+    - "^/system/files/.*$"
+  secret: "secretish"
+  hostPort: "6081"
+  controlPort: "6082"
+  memSize: "256m"

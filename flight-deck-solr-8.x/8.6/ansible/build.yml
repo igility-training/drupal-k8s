@@ -1,0 +1,84 @@
+---
+- hosts: solr
+  roles:
+    - ten7.flightdeck_base
+  tasks:
+    - name: Install from apk.
+      apk:
+        name: "{{ item }}"
+        state: present
+        update_cache: yes
+      loop:
+        - "openjdk11-jre"
+        - "curl"
+        - "tar"
+        - "rsync"
+      notify:
+        - clear apk cache
+    - name: Create a temp directory to store files needed by the run
+      tempfile:
+        state: directory
+        prefix: "ansible-deploy-"
+      register: _run_temp_dir
+      notify:
+        - delete temp items
+    - name: Download solr
+      get_url:
+        url: "https://archive.apache.org/dist/lucene/solr/8.6.0/solr-8.6.0.tgz"
+        dest: "{{ _run_temp_dir.path }}/solr.tar.gz"
+        checksum: "sha512:6b0d618069e37215f305d9a61a3e65be2b9cfc32a3689ea6a25be2f220b1ecc96a644ecc31c81e335a2dfa0bc8b7d0f2881ca192c36fd435cdd832fd309a9ddb"
+        mode: "u=rwx,g=rwx,o="
+    - name: Ensure key directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "solr"
+        group: "solr"
+        mode: "u=rwx,g=rwx,o=r"
+        recurse: yes
+      loop:
+        - "/opt"
+        - "/data"
+        - "{{ _run_temp_dir.path }}/solr"
+        - "{{ _run_temp_dir.path }}/search_api_solr"
+        - "{{ _run_temp_dir.path }}/apachesolr"
+    - name: Expand archive
+      unarchive:
+        src: "{{ _run_temp_dir.path }}/solr.tar.gz"
+        dest: "{{ _run_temp_dir.path }}/solr"
+        owner: "solr"
+        group: "solr"
+        mode: "u=rwx,g=rwx,o=r"
+        extra_opts:
+          - "--strip-components=1"
+    - name: Move the solr directory to /opt
+      command: >
+        mv {{ _run_temp_dir.path }}/solr /opt/
+    - name: Remove unnecessary files from solr install
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/opt/solr/docs"
+        - "/opt/solr/example"
+    - name: Create the log directory
+      file:
+        path: "/opt/solr/server/logs"
+        state: directory
+        owner: "solr"
+        group: "solr"
+        mode: "u=rwx,g=rwx,o="
+  handlers:
+    - name: delete temp items
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - "{{ _run_temp_dir.path }}"
+    - name: clear apk cache
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/*"
+        - "/var/cache/apk/*"

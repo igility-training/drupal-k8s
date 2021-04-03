@@ -1,0 +1,17 @@
+acl purge {
+  "localhost";
+  "127.0.0.1";
+  "::1";
+{% if flightdeck_varnish.backends is defined %}
+{% for _backend in flightdeck_varnish.backends %}
+  "{{ _backend.host }}";
+{% endfor %}
+{% else %}
+  "{{ lookup('env', 'VARNISH_BACKEND_HOST') | default('localhost', true) }}";
+{% endif %}
+}
+
+
+# List of upstream proxies we trust to set X-Forwarded-For correctly.
+acl upstream_proxy {
+}

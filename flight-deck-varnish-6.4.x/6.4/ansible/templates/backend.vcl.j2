@@ -1,0 +1,47 @@
+
+# This is a basic VCL configuration file for varnish.  See the vcl(7)
+# man page for details on VCL syntax and semantics.
+#
+# Default backend definition.  Set this to point to your content
+# server.
+{% if flightdeck_varnish.backends is defined %}
+{% for _backend in flightdeck_varnish.backends %}
+backend {{ _backend.name }} {
+  .host = "{{ _backend.host | default('localhost') }}";
+  .port = "{{ _backend.port | default('80') }}";
+
+{% if _backend.probe is defined %}
+  .probe = {
+    # We use .request instead of .url because we need to force-set a valid
+    # URL to Apache. If we don't, Varnish will mark it has sick and 503.
+    .request =
+    "HEAD / HTTP/1.1"
+    "Host: {{ _backend.host | default('localhost') }}"
+    "Connection: close";
+
+    # How often to check the backend health.
+    .interval  = {{ _backend.probe.interval | default('15s') }};
+
+    # How long to wait on each individual check.
+    .timeout   = {{ _backend.probe.timeout | default('5s') }};
+
+    # If .threshold checks fail of the last .window times, mark the BE as sick.
+    .threshold = {{ _backend.probe.threshold | default('3') }};
+    .window    = {{ _backend.probe.window | default('5') }};
+ }
+{% endif %}
+
+  .first_byte_timeout     = 300s;
+  .connect_timeout        = 5s;
+  .between_bytes_timeout  = 2s;
+}
+{% endfor %}
+{% else %}
+backend default {
+  .host = "{{ lookup('env', 'VARNISH_BACKEND_HOST') | default('localhost', true) }}";
+  .port = "{{ lookup('env', 'VARNISH_BACKEND_PORT') | default('80', true) }}";
+  .first_byte_timeout     = 300s;
+  .connect_timeout        = 5s;
+  .between_bytes_timeout  = 2s;
+}
+{% endif %}
